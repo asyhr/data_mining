@@ -1,0 +1,148 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+import numpy as np
+import scipy as sc
+import pandas as pd
+import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
+import importlib
+importlib.import_module('mpl_toolkits.mplot3d').Axes3D
+import seaborn as sns
+# from IPython.display import display
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.model_selection import train_test_split
+# import decision tree
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.svm import SVC
+from sklearn.metrics import accuracy_score
+from sklearn.metrics import f1_score
+from sklearn.model_selection import cross_validate
+from sklearn.model_selection import GridSearchCV
+from sklearn.metrics import confusion_matrix
+from sklearn.metrics import classification_report
+import random
+import re
+
+random.seed(75)
+
+def readData():
+    # data preparation
+    # get the dataset from file
+    featureFile = pd.read_csv("C:/Users/amira/OneDrive/Documents/msc_data_sc/scc403/Project/WLA.csv", header=None)
+    labelsFile = pd.read_csv("C:/Users/amira/OneDrive/Documents/msc_data_sc/scc403/Project/Labels.csv", header=None)
+
+    # combine feature and labels datasets into one
+    dataset = pd.concat([featureFile, labelsFile], axis=1)
+
+    # shuffle the dataframe because the first 16 lines
+    # has the same class label. Which will not be good for
+    # training and validation later
+    data = dataset.sample(frac=1)
+    #print(data)
+    
+    # separate it back after shuffle it
+    #to make working with specific data easier
+    features = data.iloc[:, :-1]
+    classes = data.iloc[:, -1]
+    
+    return features, classes
+
+def preProcess(features, labels):
+    
+    #check for missing data
+    print('\n\nCheck for Features Missing Data: ')
+    print(features.isnull().sum())
+    print('Check for Labels Missing Data: ')
+    print(labels.isnull().sum())
+    
+    # normalize dataset to 0 - 1 scale
+    # need to do scaling because I am using svm algorithms
+    # svm fit a model by using weighted sum of input variables (svm use distance measures between
+    # example or examplars)
+
+    # decision tree does not affected by the scaling of input variables
+    # https://machinelearningmastery.com/standardscaler-and-minmaxscaler-transforms-in-python/
+    # we only use normalization and not standardization
+    # no standardization because our data are not using different scales like minutes, hours, meters
+    # they all use pixels unit to calculate the width, length and area
+    # just normalized so the value is within 0 - 1
+    scaler = MinMaxScaler((0,1))
+    
+    # transform data
+    features2 = scaler.fit_transform(features)
+    # print(scaled)
+    # print(data)
+    #print(features)
+    # print(classes)
+    
+    print('The first five rows of the original features: ')
+    print(features)
+    print('The first five rows of the normalised features: ')
+    print(features2)
+    print('The first five rows of the class labels: ')
+    print(labels)
+    
+    return features2
+
+def gridSearch(clf,xt, yt, pr, xtest, ytest):
+    #talk about cross-validation
+    #use random grid to search for the best hyperparameters
+    #create base model for parameter tuning
+    #rf1 = RandomForestClassifier()
+
+
+    rf_cv = GridSearchCV(clf, pr, cv = 5, scoring = 'accuracy')
+    rf_cv.fit(xt, yt)
+    rf_cv_pd = pd.DataFrame(rf_cv.cv_results_)
+    print('Grid Search CV result: ', rf_cv.best_params_)
+
+    print(rf_cv_pd.sort_values(['rank_test_score'], ascending=True).reset_index(drop=True).head(8))
+    #print('Best Parameters: \n', rf_cv.cv_results_)
+    #mean_time = rf_cv.mean_fit_time
+    #print('Best Time: ', mean_time)
+    best_score = (rf_cv.best_score_) * 100
+    print('Accuracy of Trained Model: ', best_score, '%')
+
+
+    # test the data random forest
+    # use the parameter suggested by gridsearchcv
+    clf_svc = SVC(**rf_cv.best_params_)
+    clf_svc.fit(xt, yt)
+    y_pred2 = clf_svc.predict(xtest)
+    accuracy2 = accuracy_score(ytest, y_pred2) * 100
+    print('Accuracy of Test SVC Model: ', accuracy2, '%')
+    # passing actual and predicted values
+    cm2 = confusion_matrix(y_test, y_pred2, labels=clf_svc.classes_)
+
+    # true Write data values in each cell of the matrix
+    sns.heatmap(cm2, annot=True)
+    plt.savefig('cm_svc.png')
+
+    # printing the report
+    print('Classification Report: ')
+    print(classification_report(y_test, y_pred2))
+    #print("score on test: " + str(clf_svc.score(X_test, y_test)))
+    #print("score on train: " + str(clf_svc.score(X_train, y_train)))
+
+
+clf_SVM = SVC()
+x = [1.0, 10.0, 100.0, 500.0, 1000.0]
+y = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+z = [2, 3, 4]
+
+param = [[{'C': x, 'kernel': ['linear']}, {'C': x, 'kernel': ['rbf'], 'gamma': y},
+         {'C': x, 'kernel': ['poly'], 'gamma': y, 'degree': z}]]
+
+clf_labels = ['SVC']
+clfs = [clf_SVM]
+
+
+features, labels = readData()
+
+features = preProcess(features, labels)
+X_train, X_test, y_train, y_test = train_test_split(features, labels, test_size = 0.20, random_state = 50)
+
+for l, clf, p in zip(clf_labels, clfs, param):
+    print('{}:'.format(l))
+    gridSearch(clf, X_train, y_train, p, X_test, y_test)
